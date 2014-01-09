@@ -163,8 +163,19 @@ class S3Output < Fluent::TimeSlicedOutput
         chunk.write_to(tmp)
         tmp.close
       end
-      @bucket.objects[s3path].write(Pathname.new(tmp.path), {:content_type => @mime_type,
-                                                             :reduced_redundancy => @reduced_redundancy})
+
+      $log.info "start: upload file #{@path}"
+            uploaded_object = @bucket.objects[s3path].write(Pathname.new(tmp.path), {:content_type => @mime_type,
+                                                                                     :reduced_redundancy => @reduced_redundancy})
+      $log.info "finish: upload file #{@path}"
+
+      local_etag = Digest::MD5.hexdigest(Pathname.new(tmp.path).expand_path.binread)
+      remote_etag = uploaded_object.etag.gsub("\"","")
+      unless local_etag == remote_etag
+        $log.fatal "Etag didn't match error. #{@path}, local etag #{local_etag}, remote etag #{remote_etag}"
+        uploaded_object.delete if uploaded_object.exists?
+        raise "Etag didn't match error"
+      end
     ensure
       tmp.close(true) rescue nil
       w.close rescue nil
